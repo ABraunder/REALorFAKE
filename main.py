@@ -8,84 +8,108 @@ import tensorflow as tf
 
 class GUI:
     def __init__(self, master):
-        # Создаем главное окно GUI
         self.master = master
         self.master.title("Классификатор Изображений")
-        self.master.geometry("400x200")
+        self.master.geometry("400x300")
 
-        # Создаем метку для ввода URL
         self.url_label = tk.Label(master, text="Введите URL:")
         self.url_label.pack()
 
-        # Создаем поле ввода для URL
         self.url_entry = tk.Entry(master, width=40)
         self.url_entry.pack()
+        self.url_entry.bind("<Control-V>", self.paste_url)
+        self.url_entry.bind("<Button-3>", self.show_context_menu)
 
-        # Создаем кнопку для классификации изображения
         self.classify_button = tk.Button(master, text="Проверить", command=self.classify_image)
         self.classify_button.pack()
 
-        # Создаем метку для вывода результата
         self.result_label = tk.Label(master, text="")
         self.result_label.pack()
 
-        # Создаем контекстное меню для поля ввода URL
+        self.correct_label = tk.Label(master, text="Исправить:")
+        self.correct_label.pack()
+
+        self.correct_button = tk.Button(master, text="Предложить исправление", command=self.show_correction_buttons, state="disabled")
+        self.correct_button.pack()
+
+        self.fake_button = tk.Button(master, text="Fake", command=lambda: self.submit_correction("Fake"))
+        self.fake_button.pack_forget()
+
+        self.real_button = tk.Button(master, text="Real", command=lambda: self.submit_correction("Real"))
+        self.real_button.pack_forget()
+
+        self.submit_button = tk.Button(master, text="Отправить исправление", command=self.submit_correction, state="disabled")
+        self.submit_button.pack_forget()
+
         self.url_entry.bind("<Button-3>", self.show_context_menu)
 
     def show_context_menu(self, event):
-        # Создаем контекстное меню
         menu = tk.Menu(self.master, tearoff=0)
         menu.add_command(label="Вставить", command=self.paste_url)
         menu.tk_popup(event.x_root, event.y_root)
 
     def paste_url(self):
-        # Вставляем URL из буфера обмена
-        self.url_entry.delete(0, tk.END)
-        self.url_entry.insert(0, self.master.clipboard_get())
+        if self.master.clipboard_get():
+            self.url_entry.delete(0, tk.END)
+            self.url_entry.insert(0, self.master.clipboard_get())
+        else:
+            messagebox.showerror("Ошибка", "Пустой буфер обмена или нет возможности вставить URL")
 
     def classify_image(self):
-        # Получаем URL из поля ввода
         url = self.url_entry.get()
         if not url:
-            # Если URL не введен, выводим ошибку
             messagebox.showerror("Ошибка", "Пожалуйста, введите URL")
             return
 
         try:
-            # Отправляем запрос на получение изображения по URL
             response = requests.get(url)
-            # Преобразуем ответ в массив байтов
             img_array = np.asarray(bytearray(response.content), dtype=np.uint8)
-            # Декодируем массив байтов в изображение
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-            # Преобразуем изображение в формат RGB
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            # Resize изображения до размера 64x64
             img = cv2.resize(img, (64, 64))
-            # Нормализуем изображение
-            img = img / 255.0 
+            img = img / 255.0
+            self.img = np.expand_dims(img, axis=0)
 
-            # Добавляем измерение для входного тензора
-            img = np.expand_dims(img, axis=0)
-
-            # Загружаем модель классификации
-            model = tf.keras.models.load_model('model/model.keras')
-            # Классифицируем изображение
-            prediction = model.predict(img)
-
-            # Округляем предсказание до целого числа
+            self.model = tf.keras.models.load_model('model/model.keras')
+            prediction = self.model.predict(self.img)
             predicted_class = np.round(prediction).astype(int)
 
-            # Выводим результат классификации
             if predicted_class == 0:
                 self.result_label.config(text="FAKE")
             else:
                 self.result_label.config(text="REAL")
-            # Очищаем поле ввода URL
+
             self.url_entry.delete(0, tk.END)
+            self.classify_button.config(state="normal")
+            self.correct_button.config(state="normal")
         except Exception as e:
-            # Выводим ошибку, если она возникла
             messagebox.showerror("Ошибка", str(e))
+
+    def show_correction_buttons(self):
+        self.correct_button.pack_forget()
+        button_frame = tk.Frame(self.master)
+        button_frame.pack()
+        self.fake_button.pack(side=tk.LEFT, padx=10)
+        self.real_button.pack(side=tk.RIGHT, padx=10)
+        self.submit_button.pack()
+
+    def submit_correction(self, correct_class=None):
+        predicted_class = self.result_label.cget("text")
+        if correct_class:
+            self.update_model(predicted_class, correct_class)
+        self.fake_button.pack_forget()
+        self.real_button.pack_forget()
+        self.submit_button.pack_forget()
+        self.correct_button.pack()
+        self.classify_button.config(state="normal")
+        self.correct_button.config(state="disabled")
+
+    def update_model(self, predicted_class, correct_class):
+        img = self.img
+        label = np.array([1 if correct_class == "REAL" else 0])
+        self.model.fit(img, label, epochs=1, verbose=0)
+        self.model.save('model/model.keras')
+        print("Модель обновлена!")
 
 root = tk.Tk()
 gui = GUI(root)

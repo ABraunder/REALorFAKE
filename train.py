@@ -74,7 +74,7 @@ class TrainModel:
     def save_model(self, save_dir):
         # Сохранение модели
         os.makedirs(save_dir, exist_ok=True)
-        model_path = os.path.join(save_dir, 'odel.keras')
+        model_path = os.path.join(save_dir, 'model.keras')
         self.model.save(model_path)
 
 trainer = TrainModel('training_fake', 'training_real')
